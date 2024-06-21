@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <x86intrin.h>
 
 #define ALWAYS_INLINE inline __attribute__((always_inline))
@@ -389,7 +391,7 @@ static ALWAYS_INLINE void sha_step(void) {
     _mm_storeu_si128((__m128i*) &data[16], STATE1);
 }
 
-void nth_sha256(uint8_t digest[], const uint8_t start[], uint32_t length, uint64_t n) {
+void nth_sha256(uint8_t digest[], const uint8_t text[], uint32_t length, uint64_t n) {
     MASK = _mm_set_epi64x(0x0c0d0e0f08090a0bULL, 0x0405060700010203ULL);
     IDX = _mm_set_epi8(12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3);
 
@@ -416,11 +418,29 @@ void nth_sha256(uint8_t digest[], const uint8_t start[], uint32_t length, uint64
     data[32] = 0x80; // sha256 padding
     data[62] = 1; // 256 big-endian
 
-    first_hash(start, length);
-    for (uint64_t i = 0; i < n - 1; ++i) {
+    // sha256 padding
+    uint32_t bitlength = length * 8;
+    uint32_t padding_length = (bitlength + 65 + 511) / 512 * 64;
+
+    uint8_t *start = calloc(padding_length, sizeof(*start));
+    memcpy(start, text, length);
+
+    start[length] = 0x80;
+    start[padding_length - 4] = (bitlength >> 24) & 0xff;
+    start[padding_length - 3] = (bitlength >> 16) & 0xff;
+    start[padding_length - 2] = (bitlength >> 8) & 0xff;
+    start[padding_length - 1] = bitlength & 0xff;
+
+    first_hash(start, padding_length);
+    free(start);
+
+    // unroll for loop
+    for (uint64_t i = 0; i < (n - 1) / 3; ++i) {
+        sha_step(); sha_step(); sha_step();
+    }
+    for (uint64_t i = 0; i < (n - 1) % 3; ++i) {
         sha_step();
     }
-
     for (uint8_t i = 0; i < 32; ++i) {
         digest[i] = data[i];
     }
@@ -428,17 +448,25 @@ void nth_sha256(uint8_t digest[], const uint8_t start[], uint32_t length, uint64
 
 #ifdef TEST_MAIN
 #include <stdio.h>
+#include <sys/time.h>
 int main(void) {
-    uint8_t start[64];
-    start[0] = 0x80;
+    struct timeval t1, t2;
+    double elapsedTime;
 
     uint8_t digest[32];
+    uint8_t text[1] = { 0 };
 
-    nth_sha256(digest, start, sizeof(start), 100000000);
+    gettimeofday(&t1, NULL);
+    nth_sha256(digest, text, 0, 100000000);
+    gettimeofday(&t2, NULL);
 
-    for (uint8_t i = 0; i < 32; ++i) {
+    for (uint8_t i = 0; i < sizeof(digest); ++i) {
         printf("%02x", digest[i]);
     }
     printf("\n");
+
+    elapsedTime = t2.tv_sec - t1.tv_sec;
+    elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000000.0;
+    printf("Time: %.3fs\n", elapsedTime);
 }
-#endif
+#endif // TEST_MAIN
