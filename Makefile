@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++20 -O3 -DTEST_MAIN -msse4.1 -mavx512vl -mavx512vbmi -msha -Wall -Wextra -Weffc++ -Werror
+CXXFLAGS = -std=c++20 -O3 -DTEST_MAIN -march=native -Wall -Wextra -Weffc++ -Werror
 LDLIBS =
 
 PRGM  = test
